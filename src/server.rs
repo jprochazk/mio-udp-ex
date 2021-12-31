@@ -30,20 +30,20 @@ fn main() -> Result<()> {
     poll.registry()
         .register(&mut socket, SOCKET, Interest::WRITABLE | Interest::READABLE)?;
 
-    let (send, recv) = channel::<(SocketAddr, String)>();
+    // messages are queued and echoed back to their source address
+    let (sender, receiver) = channel::<(SocketAddr, String)>();
 
     let mut write_buffer = vec![0u8; 65536];
     let mut read_buffer = vec![0u8; 65536];
-    log::info!("Scratch space {}", read_buffer.len());
 
     let mut events = Events::with_capacity(128);
     loop {
         poll.poll(&mut events, Some(Duration::from_millis(100)))?;
         for event in events.iter() {
             match event.token() {
-                // ready to send
+                // write one message per writable event
                 SOCKET if event.is_writable() => {
-                    if let Ok((addr, msg)) = recv.try_recv() {
+                    if let Ok((addr, msg)) = receiver.try_recv() {
                         let mut writer = Cursor::new(&mut write_buffer[..]);
                         writer.write_all(msg.as_bytes())?;
                         let len = writer.position() as usize;
@@ -53,12 +53,13 @@ fn main() -> Result<()> {
                         log::info!("Echoed '{}'", msg);
                     }
                 }
+                // read all packets
                 SOCKET if event.is_readable() => loop {
                     match socket.recv_from(read_buffer.as_mut_slice()) {
                         Ok((len, addr)) => {
                             let msg = std::str::from_utf8(&read_buffer[0..len])?.to_string();
                             log::info!("Received '{}'", msg);
-                            send.send((addr, msg))?;
+                            sender.send((addr, msg))?;
                         }
                         Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                             break;

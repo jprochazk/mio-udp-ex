@@ -24,14 +24,10 @@ fn main() -> Result<()> {
     poll.registry()
         .register(&mut socket, SOCKET, Interest::READABLE)?;
 
-    let send_one = || -> Result<()> {
+    let send_message = || -> Result<()> {
         let msg = b"Hello from the other side";
-        let len = socket.send(&msg[..])?;
-        log::info!(
-            "Sent '{}' ({} bytes)",
-            std::str::from_utf8(msg).unwrap(),
-            len
-        );
+        socket.send(msg)?;
+        log::info!("Sent '{}'", std::str::from_utf8(msg).unwrap());
         Ok(())
     };
 
@@ -41,7 +37,7 @@ fn main() -> Result<()> {
         poll.poll(&mut events, Some(Duration::from_millis(100)))?;
         for event in events.iter() {
             match dbg!(event).token() {
-                // ready to read data
+                // ready to read data - this only happens once
                 SOCKET => {
                     if event.is_readable() {
                         let len = socket.recv(&mut read_buffer[..])?;
@@ -53,6 +49,6 @@ fn main() -> Result<()> {
             }
         }
 
-        send_one()?;
+        send_message()?;
     }
 }
